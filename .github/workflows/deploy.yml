@@ -3,14 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version'
+        description: "Release version"
         required: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and deploy
+      - name: Deploy to VM
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VM_IP }}
@@ -19,5 +19,5 @@ jobs:
           script: |
             docker stop app || true
             docker rm app || true
-            docker pull cr.yandex/<идентификатор_реестра>/app:${{ github.event.inputs.version }}_latest
-            docker run -d --name app -p 3000:3000 cr.yandex/<идентификатор_реестра>/app:${{ github.event.inputs.version }}_latest
+            docker pull cr.yandex/<registry_id>/app:${{ github.event.inputs.version }}_latest
+            docker run -d --name app -p 80:3000 -p 443:3000 cr.yandex/<registry_id>/app:${{ github.event.inputs.version }}_latest
