@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with: { node-version: 18 }
@@ -48,8 +48,13 @@ jobs:
 
       - name: Login to Yandex Container Registry
         run: |
-          echo "${{ secrets.YC_SECRET_ACCESS_KEY }}" | docker login --username iam --password-stdin cr.yandex
+          # Устанавливаем YC CLI
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
 
+          # Получаем IAM-токен
+          YC_TOKEN=$(yc iam create-token)
+          echo "$YC_TOKEN" | docker login --username iam --password-stdin cr.yandex
 
       - name: Build and push Docker
         uses: docker/build-push-action@v5
