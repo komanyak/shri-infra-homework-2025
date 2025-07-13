@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Для получения всей истории коммитов
+          fetch-depth: 0 
 
       - uses: actions/setup-node@v4
         with: { node-version: 18 }
@@ -59,6 +59,8 @@ jobs:
           tags: |
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}_latest
+          secrets: |
+            {"auths":{"cr.yandex":{"username":"iam","password":"${{ secrets.YC_SECRET_ACCESS_KEY }}"}}}
 
       - name: Create version tag
         run: |
