@@ -11,6 +11,3 @@ npm-debug.log*
 dist
 build
 
-*.ts
-*.tsx
-src/client
