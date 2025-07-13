@@ -39,7 +39,6 @@ jobs:
           current: github-actions
           profiles:
             github-actions:
-              token: ${{ secrets.YC_SECRET_ACCESS_KEY }}
               service-account-key:
                 id: ${{ secrets.YC_ACCESS_KEY_ID }}
                 service_account_id: ${{ secrets.YC_SERVICE_ACCOUNT_ID }}
