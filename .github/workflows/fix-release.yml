@@ -39,17 +39,17 @@ jobs:
     needs: checks
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout release branch
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
-      - name: Configure git
+
+      - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-      - name: Checkout the release branch
+      - name: Checkout release branch
         run: |
           git fetch origin releases/${{ github.event.inputs.version }}:releases/${{ github.event.inputs.version }}
           git checkout releases/${{ github.event.inputs.version }}
@@ -93,19 +93,6 @@ jobs:
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Update CHANGELOG.md
-        run: |
-          # prepend new fix section
-          echo "## v${{ github.event.inputs.version }}_fix${{ github.run_number }}" > CHANGELOG.new
-          echo "" >> CHANGELOG.new
-          echo "${{ steps.commits.outputs.COMMITS }}" >> CHANGELOG.new
-          echo "" >> CHANGELOG.new
-          cat CHANGELOG.md >> CHANGELOG.new
-          mv CHANGELOG.new CHANGELOG.md
-          git add CHANGELOG.md
-          git commit -m "chore: update CHANGELOG for v${{ github.event.inputs.version }}_fix${{ github.run_number }}" || echo "No CHANGELOG changes"
-          git push origin releases/${{ github.event.inputs.version }}
-
       - name: Find Release Issue
         id: find_issue
         uses: actions/github-script@v6
@@ -130,7 +117,7 @@ jobs:
               issue_number: parseInt('${{ steps.find_issue.outputs.result }}'),
               body: `### Fix Release Details\n\n` +
                     `**Author:** ${{ github.actor }}\n` +
-                    `**Fix version:** v${{ github.event.inputs.version }}_fix${{ github.run_number }}\n` +
+                    `**Fix version:** fix${{ github.run_number }}\n` +
                     `**Date:** ${new Date().toISOString()}\n` +
                     `**Docker Image:** cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ github.run_number }}\n\n` +
                     `### Commits\n${{ steps.commits.outputs.COMMITS }}`
