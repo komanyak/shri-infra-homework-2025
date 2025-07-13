@@ -6,15 +6,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Для получения всей истории коммитов
+
       - uses: actions/setup-node@v4
         with: { node-version: 18 }
 
-      # Установка зависимостей и запуск проверок
       - run: npm ci
       - run: npm run lint
       - run: npm run test
 
-      # Создание релизной ветки
+      - name: Get previous tag
+        id: get_prev_tag
+        run: |
+          if git describe --tags --abbrev=0; then
+            echo "prev_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+          else
+            echo "prev_tag=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create release branch
         run: |
           git config --global user.name "GitHub Actions"
@@ -22,7 +32,6 @@ jobs:
           git checkout -b releases/${{ github.run_number }}
           git push origin releases/${{ github.run_number }}
 
-      # Сборка и публикация Docker-образа
       - name: Build and push Docker
         uses: docker/build-push-action@v5
         with:
@@ -30,30 +39,40 @@ jobs:
           push: true
           tags: |
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}
-            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:latest
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}_latest
           secrets: |
             {"auths":{"cr.yandex":{"username":"oauth2","password":"${{ secrets.YC_ACCESS_TOKEN }}"}}}
 
-      # Создание git-тега
-      - name: Create tag
+      - name: Create version tag
         run: |
           git tag v${{ github.run_number }}
           git push origin v${{ github.run_number }}
 
-      # Обновление CHANGELOG.md
+      - name: Generate commit list
+        id: commits
+        run: |
+          if [ -z "${{ steps.get_prev_tag.outputs.prev_tag }}" ]; then
+            COMMITS=$(git log --pretty=format:'- %s')
+          else
+            COMMITS=$(git log --pretty=format:'- %s' ${{ steps.get_prev_tag.outputs.prev_tag }}..HEAD)
+          fi
+          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Update CHANGELOG
         run: |
-          echo "## v${{ github.run_number }}\n$(git log --pretty=format:'- %s' $(git describe --tags --abbrev=0)^..HEAD)" >> CHANGELOG.md
+          echo "## v${{ github.run_number }}" > CHANGELOG.new
+          echo "${{ steps.commits.outputs.COMMITS }}" >> CHANGELOG.new
+          cat CHANGELOG.md >> CHANGELOG.new
+          mv CHANGELOG.new CHANGELOG.md
+
           git add CHANGELOG.md
           git commit -m "Update CHANGELOG for v${{ github.run_number }}"
           git push
 
-      # Создание Issue в GitHub
-      - name: Create GitHub Issue
+      - name: Create Release Issue
         uses: actions/github-script@v6
-        env:
-          COMMITS_LIST: |
-            $(git log --pretty=format:'- %s' $(git describe --tags --abbrev=0)^..HEAD)
         with:
           script: |
             await github.rest.issues.create({
@@ -61,8 +80,9 @@ jobs:
               repo: context.repo.repo,
               title: `Release v${{ github.run_number }}`,
               body: `### Release Details\n\n` +
+                    `**Author:** ${{ github.actor }}\n` +
                     `**Version:** ${{ github.run_number }}\n` +
                     `**Date:** ${new Date().toISOString()}\n` +
                     `**Docker Image:** cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}\n\n` +
-                    `### Commits\n${process.env.COMMITS_LIST}`
+                    `### Commits\n${{ steps.commits.outputs.COMMITS }}`
             })

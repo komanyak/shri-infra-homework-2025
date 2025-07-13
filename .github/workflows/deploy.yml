@@ -10,14 +10,45 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Find Release Issue
+        id: find_issue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all'
+            });
+            const issue = issues.find(issue => issue.title === `Release v${{ github.event.inputs.version }}`);
+            return issue ? issue.number : 0;
+
       - name: Deploy to VM
+        if: ${{ steps.find_issue.outputs.result != 0 }}
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VM_IP }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            docker login -u iam -p ${{ secrets.YC_ACCESS_TOKEN }} cr.yandex
             docker stop app || true
             docker rm app || true
-            docker pull cr.yandex/<registry_id>/app:${{ github.event.inputs.version }}_latest
-            docker run -d --name app -p 80:3000 -p 443:3000 cr.yandex/<registry_id>/app:${{ github.event.inputs.version }}_latest
+            docker pull cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_latest
+            docker run -d --name app -p 3000:3000 \
+              cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_latest
+
+      - name: Add Deploy Comment to Issue
+        if: ${{ steps.find_issue.outputs.result != 0 }}
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.find_issue.outputs.result }},
+              body: `### Production Deployment\n\n` +
+                    `**Deployed by:** ${{ github.actor }}\n` +
+                    `**Date:** ${new Date().toISOString()}\n` +
+                    `**Status:** Successfully deployed to production`
+            })

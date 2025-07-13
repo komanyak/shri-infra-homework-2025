@@ -2,20 +2,17 @@ name: PR Check
 on: [pull_request]
 
 jobs:
-  lint:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 18 }
+      
       - run: npm ci
-      - run: npm run lint
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 18 }
-      - run: npm ci
-      - run: npm run test
+      
+      - name: Run Linter
+        run: npm run lint
+        
+      - name: Run Tests
+        run: npm run test

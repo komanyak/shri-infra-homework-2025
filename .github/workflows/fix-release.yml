@@ -1,0 +1,90 @@
+name: Fix Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Base release version'
+        required: true
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - uses: actions/setup-node@v4
+        with: { node-version: 18 }
+      
+      - name: Checkout release branch
+        run: |
+          git checkout releases/${{ github.event.inputs.version }}
+          git pull
+      
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+
+      - name: Get previous fix tag
+        id: get_prev_tag
+        run: |
+          if git describe --tags --abbrev=0 --match "v${{ github.event.inputs.version }}_fix*"; then
+            echo "prev_tag=$(git describe --tags --abbrev=0 --match "v${{ github.event.inputs.version }}_fix*")" >> $GITHUB_OUTPUT
+          else
+            echo "prev_tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ github.run_number }}
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_latest
+          secrets: |
+            {"auths":{"cr.yandex":{"username":"oauth2","password":"${{ secrets.YC_ACCESS_TOKEN }}"}}}
+
+      - name: Create fix tag
+        run: |
+          git tag v${{ github.event.inputs.version }}_fix${{ github.run_number }}
+          git push origin v${{ github.event.inputs.version }}_fix${{ github.run_number }}
+
+      - name: Generate commit list
+        id: commits
+        run: |
+          COMMITS=$(git log --pretty=format:'- %s' ${{ steps.get_prev_tag.outputs.prev_tag }}..HEAD)
+          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Find Release Issue
+        id: find_issue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all'
+            });
+            const issue = issues.find(issue => issue.title === `Release v${{ github.event.inputs.version }}`);
+            return issue ? issue.number : 0;
+
+      - name: Add Fix Comment to Issue
+        if: ${{ steps.find_issue.outputs.result != 0 }}
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ steps.find_issue.outputs.result }},
+              body: `### Fix Release Details\n\n` +
+                    `**Author:** ${{ github.actor }}\n` +
+                    `**Fix version:** ${{ github.run_number }}\n` +
+                    `**Date:** ${new Date().toISOString()}\n` +
+                    `**Docker Image:** cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ github.run_number }}\n\n` +
+                    `### Commits\n${{ steps.commits.outputs.COMMITS }}`
+            })
