@@ -93,6 +93,7 @@ https://yandex.cloud/ru/docs/compute/quickstart/quick-create-linux#create-vm
         - ссылку на docker-образом в Yandex Container Registry\
           `cr.yandex/<идентификатор_реестра>/app:<версия_релиза>_fix<номер_запуска_фиксрелизного_флоу>`
 
+
 4. Флоу выкатки релиза в прод
 
     - принимает на вход версию релиза
