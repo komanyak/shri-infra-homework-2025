@@ -5,16 +5,24 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  
 
-      - uses: actions/setup-node@v4
-        with: { node-version: 18 }
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
 
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test
 
       - name: Get previous tag
         id: get_prev_tag
@@ -32,31 +40,11 @@ jobs:
           git checkout -b releases/${{ github.run_number }}
           git push origin releases/${{ github.run_number }}
 
-      - name: Configure YC CLI
-        run: |
-          mkdir -p ~/.config/yandex-cloud
-          cat <<EOF > ~/.config/yandex-cloud/config.yaml
-          current: github-actions
-          profiles:
-            github-actions:
-              service-account-key:
-                id: ${{ secrets.YC_ACCESS_KEY_ID }}
-                service_account_id: ${{ secrets.YC_SERVICE_ACCOUNT_ID }}
-                private_key: ${{ secrets.YC_SECRET_ACCESS_KEY }}
-          EOF
-
       - name: Login to Yandex Container Registry
         run: |
-          # Устанавливаем YC CLI
-          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
-          # Добавляем yc в PATH
-          export PATH=$HOME/yandex-cloud/bin:$PATH
-          source ~/.bashrc
-          
-          # Получаем IAM-токен
-          YC_TOKEN=$(yc iam create-token)
-          echo "$YC_TOKEN" | docker login --username iam --password-stdin cr.yandex
-      - name: Build and push Docker
+          echo "${{ secrets.YC_IAM_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -64,8 +52,6 @@ jobs:
           tags: |
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}_latest
-          secrets: |
-            {"auths":{"cr.yandex":{"username":"iam","password":"${{ secrets.YC_SECRET_ACCESS_KEY }}"}}}
 
       - name: Create version tag
         run: |
