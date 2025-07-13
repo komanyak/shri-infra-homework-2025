@@ -11,22 +11,31 @@ jobs:
   fix:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm run test
+
       - name: Checkout release branch
         run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
           git checkout releases/${{ github.event.inputs.version }}
           git pull
-
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test
 
       - name: Get previous fix tag
         id: get_prev_tag
@@ -37,7 +46,11 @@ jobs:
             echo "prev_tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and push Docker
+      - name: Login to Yandex Container Registry
+        run: |
+          echo "${{ secrets.YC_IAM_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+
+      - name: Build and push Docker images
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -45,13 +58,9 @@ jobs:
           tags: |
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ github.run_number }}
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_latest
-          secrets: |
-            {"auths":{"cr.yandex":{"username":"oauth2","password":"${{ secrets.YC_ACCESS_TOKEN }}"}}}
 
       - name: Create fix tag
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
           git tag v${{ github.event.inputs.version }}_fix${{ github.run_number }}
           git push origin v${{ github.event.inputs.version }}_fix${{ github.run_number }}
 
@@ -68,12 +77,12 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const { data: issues } = await github.rest.issues.listForRepo({
+            const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'all'
             });
-            const issue = issues.find(issue => issue.title === `Release v${{ github.event.inputs.version }}`);
+            const issue = issues.data.find(i => i.title === `Release v${{ github.event.inputs.version }}`);
             return issue ? issue.number : 0;
 
       - name: Add Fix Comment to Issue
@@ -84,7 +93,7 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: ${{ steps.find_issue.outputs.result }},
+              issue_number: parseInt('${{ steps.find_issue.outputs.result }}'),
               body: `### Fix Release Details\n\n` +
                     `**Author:** ${{ github.actor }}\n` +
                     `**Fix version:** fix${{ github.run_number }}\n` +
