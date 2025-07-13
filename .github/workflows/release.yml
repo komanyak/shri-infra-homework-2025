@@ -32,9 +32,24 @@ jobs:
           git checkout -b releases/${{ github.run_number }}
           git push origin releases/${{ github.run_number }}
 
+      - name: Configure YC CLI
+        run: |
+          mkdir -p ~/.config/yandex-cloud
+          cat <<EOF > ~/.config/yandex-cloud/config.yaml
+          current: github-actions
+          profiles:
+            github-actions:
+              token: ${{ secrets.YC_SECRET_ACCESS_KEY }}
+              service-account-key:
+                id: ${{ secrets.YC_ACCESS_KEY_ID }}
+                service_account_id: ${{ secrets.YC_SERVICE_ACCOUNT_ID }}
+                private_key: ${{ secrets.YC_SECRET_ACCESS_KEY }}
+          EOF
+
       - name: Login to Yandex Container Registry
         run: |
-          echo "${{ secrets.YC_ACCESS_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+          YC_TOKEN=$(yc iam create-token)
+          echo "$YC_TOKEN" | docker login --username iam --password-stdin cr.yandex
 
       - name: Build and push Docker
         uses: docker/build-push-action@v5
