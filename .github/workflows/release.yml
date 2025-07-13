@@ -32,6 +32,10 @@ jobs:
           git checkout -b releases/${{ github.run_number }}
           git push origin releases/${{ github.run_number }}
 
+      - name: Login to Yandex Container Registry
+        run: |
+          echo "${{ secrets.YC_ACCESS_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+
       - name: Build and push Docker
         uses: docker/build-push-action@v5
         with:
@@ -40,8 +44,6 @@ jobs:
           tags: |
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.run_number }}_latest
-          secrets: |
-            ${{ secrets.YC_ACCESS_TOKEN }}
 
       - name: Create version tag
         run: |
