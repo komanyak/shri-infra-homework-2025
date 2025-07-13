@@ -24,11 +24,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Run tests
-        run: npm run test
+      - name: Parallel: Type check and Tests
+        run: |
+          npx tsc --noEmit --skipLibCheck &
+          npm run test &
+          wait
 
       - name: Checkout release branch
         run: |
@@ -83,10 +83,10 @@ jobs:
               state: 'all'
             });
             const issue = issues.data.find(i => i.title === `Release v${{ github.event.inputs.version }}`);
-            return issue ? issue.number : 0;
+            return issue ? issue.number.toString() : '0';
 
       - name: Add Fix Comment to Issue
-        if: ${{ steps.find_issue.outputs.result != 0 }}
+        if: ${{ steps.find_issue.outputs.result != '0' }}
         uses: actions/github-script@v6
         with:
           script: |
