@@ -1,9 +1,13 @@
 name: Release
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
 
 jobs:
-  release:
+  checks:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        task: [lint, test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,11 +22,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run linter
-        run: npm run lint
+      - name: Run ${{ matrix.task }}
+        run: |
+          if [ "${{ matrix.task }}" = "lint" ]; then
+            npm run lint
+          else
+            npm run test
+          fi
 
-      - name: Run tests
-        run: npm run test
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
 
       - name: Get previous tag
         id: get_prev_tag
@@ -35,10 +55,34 @@ jobs:
 
       - name: Create release branch
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          git checkout main
+          git pull
           git checkout -b releases/${{ github.run_number }}
           git push -u origin releases/${{ github.run_number }}
+
+      - name: Generate commit list
+        id: commits
+        run: |
+          if [ -z "${{ steps.get_prev_tag.outputs.prev_tag }}" ]; then
+            COMMITS=$(git log --pretty=format:'- %s')
+          else
+            COMMITS=$(git log --pretty=format:'- %s' ${{ steps.get_prev_tag.outputs.prev_tag }}..HEAD)
+          fi
+          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Update CHANGELOG.md
+        run: |
+          echo "## v${{ github.run_number }}" > CHANGELOG.new
+          echo "" >> CHANGELOG.new
+          echo "${{ steps.commits.outputs.COMMITS }}" >> CHANGELOG.new
+          echo "" >> CHANGELOG.new
+          cat CHANGELOG.md >> CHANGELOG.new
+          mv CHANGELOG.new CHANGELOG.md
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG for v${{ github.run_number }}"
+          git push origin releases/${{ github.run_number }}
 
       - name: Login to Yandex Container Registry
         run: |
@@ -57,29 +101,6 @@ jobs:
         run: |
           git tag v${{ github.run_number }}
           git push origin v${{ github.run_number }}
-
-      - name: Generate commit list
-        id: commits
-        run: |
-          if [ -z "${{ steps.get_prev_tag.outputs.prev_tag }}" ]; then
-            COMMITS=$(git log --pretty=format:'- %s')
-          else
-            COMMITS=$(git log --pretty=format:'- %s' ${{ steps.get_prev_tag.outputs.prev_tag }}..HEAD)
-          fi
-          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Update CHANGELOG
-        run: |
-          echo "## v${{ github.run_number }}" > CHANGELOG.new
-          echo "${{ steps.commits.outputs.COMMITS }}" >> CHANGELOG.new
-          cat CHANGELOG.md >> CHANGELOG.new
-          mv CHANGELOG.new CHANGELOG.md
-
-          git add CHANGELOG.md
-          git commit -m "Update CHANGELOG for v${{ github.run_number }}"
-          git push
 
       - name: Create Release Issue
         uses: actions/github-script@v6
