@@ -1,20 +1,22 @@
-FROM node:18-alpine AS client-builder
+FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+
 RUN npm run build
+RUN npx tsc
 
 FROM node:18-alpine
 WORKDIR /app
 
-COPY --from=client-builder /app/dist ./dist
-COPY --from=client-builder /app/src/server ./src/server
-COPY --from=client-builder /app/package*.json ./
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/build ./build  # Скомпилированный серверный код
 
 RUN npm ci --omit=dev
 
 ENV PORT=3000
 EXPOSE 3000
 
-CMD ["node", "src/server/index.js"]
+CMD ["node", "build/src/server/index.js"]
