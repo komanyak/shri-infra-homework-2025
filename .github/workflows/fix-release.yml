@@ -8,8 +8,12 @@ on:
         required: true
 
 jobs:
-  fix:
+  # 1. Параллельные проверки: lint и test
+  checks:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        task: [lint, test]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,18 +28,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Parallel: Type check and Tests
+      - name: Run ${{ matrix.task }}
         run: |
-          npx tsc --noEmit --skipLibCheck &
-          npm run test &
-          wait
+          if [ "${{ matrix.task }}" = "lint" ]; then
+            npm run lint
+          else
+            npm run test
+          fi
+
+  # 2. Основной флоу фикса, зависит от успешных checks
+  fix:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
 
       - name: Checkout release branch
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
+          git fetch origin releases/${{ github.event.inputs.version }}:releases/${{ github.event.inputs.version }}
           git checkout releases/${{ github.event.inputs.version }}
-          git pull
 
       - name: Get previous fix tag
         id: get_prev_tag
@@ -77,16 +98,16 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            const issues = await github.rest.issues.listForRepo({
+            const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'all'
             });
-            const issue = issues.data.find(i => i.title === `Release v${{ github.event.inputs.version }}`);
-            return issue ? issue.number.toString() : '0';
+            const issue = issues.find(i => i.title === `Release v${{ github.event.inputs.version }}`);
+            return issue ? issue.number : 0;
 
       - name: Add Fix Comment to Issue
-        if: ${{ steps.find_issue.outputs.result != '0' }}
+        if: ${{ steps.find_issue.outputs.result != 0 }}
         uses: actions/github-script@v6
         with:
           script: |
