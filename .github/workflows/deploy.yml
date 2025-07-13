@@ -28,7 +28,7 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VM_IP }}
-          username: ubuntu
+          username: komanyak
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             docker login -u iam -p ${{ secrets.YC_ACCESS_TOKEN }} cr.yandex
