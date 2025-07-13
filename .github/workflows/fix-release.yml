@@ -54,14 +54,17 @@ jobs:
           git fetch origin releases/${{ github.event.inputs.version }}:releases/${{ github.event.inputs.version }}
           git checkout releases/${{ github.event.inputs.version }}
 
-      - name: Get previous fix tag
-        id: get_prev_tag
+      - name: Determine next fix number
+        id: next_fix
         run: |
-          if git describe --tags --abbrev=0 --match "v${{ github.event.inputs.version }}_fix*"; then
-            echo "prev_tag=$(git describe --tags --abbrev=0 --match "v${{ github.event.inputs.version }}_fix*")" >> $GITHUB_OUTPUT
+          TAGS=$(git tag -l "v${{ github.event.inputs.version }}_fix*")
+          if [ -z "$TAGS" ]; then
+            NEXT_FIX=1
           else
-            echo "prev_tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            MAX_FIX=$(echo "$TAGS" | sed -E "s/v${{ github.event.inputs.version }}_fix([0-9]+)/\1/" | sort -nr | head -n1)
+            NEXT_FIX=$((MAX_FIX + 1))
           fi
+          echo "NEXT_FIX=$NEXT_FIX" >> $GITHUB_OUTPUT
 
       - name: Login to Yandex Container Registry
         run: |
@@ -73,22 +76,29 @@ jobs:
           context: .
           push: true
           tags: |
-            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ github.run_number }}
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ steps.next_fix.outputs.NEXT_FIX }}
             cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_latest
 
       - name: Create fix tag
         run: |
-          git tag v${{ github.event.inputs.version }}_fix${{ github.run_number }}
-          git push origin v${{ github.event.inputs.version }}_fix${{ github.run_number }}
+          git tag v${{ github.event.inputs.version }}_fix${{ steps.next_fix.outputs.NEXT_FIX }}
+          git push origin v${{ github.event.inputs.version }}_fix${{ steps.next_fix.outputs.NEXT_FIX }}
+
+      - name: Get previous fix tag
+        id: get_prev_tag
+        run: |
+          TAGS=$(git tag -l "v${{ github.event.inputs.version }}_fix*")
+          if [ -z "$TAGS" ]; then
+            echo "prev_tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            LAST_TAG=$(echo "$TAGS" | sort -V | tail -n1)
+            echo "prev_tag=$LAST_TAG" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate commit list
         id: commits
         run: |
-          if [ "${{ steps.get_prev_tag.outputs.prev_tag }}" = "v${{ github.event.inputs.version }}" ]; then
-            COMMITS=$(git log --pretty=format:'- %s' v${{ github.event.inputs.version }}..HEAD)
-          else
-            COMMITS=$(git log --pretty=format:'- %s' ${{ steps.get_prev_tag.outputs.prev_tag }}..HEAD)
-          fi
+          COMMITS=$(git log --pretty=format:'- %s' ${{ steps.get_prev_tag.outputs.prev_tag }}..HEAD)
           echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -117,8 +127,8 @@ jobs:
               issue_number: parseInt('${{ steps.find_issue.outputs.result }}'),
               body: `### Fix Release Details\n\n` +
                     `**Author:** ${{ github.actor }}\n` +
-                    `**Fix version:** fix${{ github.run_number }}\n` +
+                    `**Fix version:** fix${{ steps.next_fix.outputs.NEXT_FIX }}\n` +
                     `**Date:** ${new Date().toISOString()}\n` +
-                    `**Docker Image:** cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ github.run_number }}\n\n` +
+                    `**Docker Image:** cr.yandex/${{ secrets.YC_REGISTRY_ID }}/app:${{ github.event.inputs.version }}_fix${{ steps.next_fix.outputs.NEXT_FIX }}\n\n` +
                     `### Commits\n${{ steps.commits.outputs.COMMITS }}`
             })
